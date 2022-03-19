@@ -1,17 +1,7 @@
 use rand::{self, prelude::SliceRandom, rngs::OsRng};
 
-pub(crate) struct WordChooser {}
-
-impl WordChooser {
-    pub fn new(first: Vec<&str>, second: Vec<&str>, third: Vec<&str>) -> WordChooser {
-        WordChooser {}
-    }
-
-    pub fn generate_room_name(&mut self) -> String {
-        let mut s = String::new();
-        s.push_str("Wow");
-        s
-    }
+pub(crate) trait WordChoosing {
+    fn generate_room_name(&self) -> String;
 }
 
 pub(crate) fn generate_room_name() -> String {
