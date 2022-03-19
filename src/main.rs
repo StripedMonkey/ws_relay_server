@@ -12,10 +12,10 @@ use std::{
 use tokio::net::TcpListener;
 
 use crate::ws_handler::RoomMap;
+mod client;
 
 #[tokio::main]
 async fn main() -> Result<(), IoError> {
-
     let addr = env::args()
         .nth(1)
         .unwrap_or_else(|| "127.0.0.1:8080".to_string());
