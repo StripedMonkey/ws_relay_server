@@ -1,10 +1,26 @@
+use std::sync::{Arc, Mutex, RwLock};
 use std::{collections::HashMap, net::SocketAddr};
 
+use log;
 use serde::{Deserialize, Serialize};
 
+use crate::client::RoomClient;
 use crate::{word_chooser::generate_room_name, ws_handler::Tx};
 
 pub type RoomID = String;
+pub(crate) type WrappedRoom = Arc<Mutex<Room>>;
+
+#[derive(Serialize, Deserialize, Debug)]
+pub(crate) enum RoomRequest {
+    NewRoom,
+    JoinRoom(String),
+}
+
+#[derive(Clone, Default)]
+pub(crate) struct RoomContext {
+    pub peer_map: Arc<RwLock<HashMap<SocketAddr, RoomID>>>,
+    pub room_map: Arc<RwLock<HashMap<RoomID, Arc<Mutex<Room>>>>>,
+}
 
 pub(crate) fn room_setup(msg: String) -> Result<(RoomRequest, RoomID), serde_json::Error> {
     match serde_json::from_str::<RoomRequest>(&msg) {
@@ -26,29 +42,22 @@ pub(crate) struct Room {
 }
 
 impl Room {
-    pub fn new(initiating_address: SocketAddr, send: Tx) -> Room {
-        let mut clients = HashMap::new();
-        clients.insert(initiating_address, send);
-        Room { clients }
+    pub fn new(room_id: String) -> Room {
+        let clients = HashMap::new();
+        Room { clients, room_id }
     }
 
-    pub fn add_client(&mut self, address: SocketAddr, send: Tx) -> Result<(), (SocketAddr, Tx)> {
-        match self.clients.insert(address, send) {
-            Some(already_existing_tx) => Err((address, already_existing_tx)),
+    pub fn add_client(&mut self, client: RoomClient) -> Result<(), ()> {
+        match self.clients.insert(client.address, client.send) {
+            Some(_) => Err(()),
             None => Ok(()),
         }
     }
 
-    pub fn remove_client(&mut self, address: &SocketAddr) -> Result<(SocketAddr, Tx), ()> {
+    pub fn remove_client(&mut self, address: &SocketAddr) -> Result<(), ()> {
         match self.clients.remove_entry(address) {
-            Some(entry) => Ok(entry),
+            Some(_) => Ok(()),
             None => Err(()),
         }
     }
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub(crate) enum RoomRequest {
-    NewRoom,
-    JoinRoom(String),
 }
