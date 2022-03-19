@@ -1,7 +1,6 @@
 use std::sync::{Arc, Mutex, RwLock};
 use std::{collections::HashMap, net::SocketAddr};
 
-use log;
 use serde::{Deserialize, Serialize};
 
 use crate::client::RoomClient;
@@ -39,12 +38,12 @@ impl RoomContext {
                     tries += 1;
                 }
                 let room = Arc::new(Mutex::new(Room::new(room_name.clone())));
-                room_map.insert(room_name.clone(), room.clone());
+                room_map.insert(room_name, room.clone());
                 Ok(room)
             }
             RoomRequest::JoinRoom(room) => match room_map.get(&room) {
                 Some(room) => Ok(room.clone()),
-                None => return Err(()),
+                None => Err(()),
             },
         }
     }

@@ -6,7 +6,7 @@ pub(crate) trait WordChoosing {
 
 pub(crate) fn generate_room_name() -> String {
     let data: Vec<String> = include_str!("WordList.txt")
-        .split("\n")
+        .split('\n')
         .map(|s| s.to_string())
         .collect();
     data.choose(&mut OsRng).unwrap().clone()
