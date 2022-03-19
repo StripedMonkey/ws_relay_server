@@ -1,5 +1,6 @@
 use std::{env, io::Error as IoError};
 
+use log::info;
 use tokio::net::TcpListener;
 
 use crate::room_context::RoomContext;
@@ -21,7 +22,7 @@ async fn main() -> Result<(), IoError> {
     // Create the event loop and TCP listener we'll accept connections on.
     let try_socket = TcpListener::bind(&addr).await;
     let listener = try_socket.expect("Failed to bind");
-    println!("Listening on: {}", addr);
+    info!("Listening on: {}", addr);
 
     // Let's spawn the handling of each connection in a separate task.
     while let Ok((stream, addr)) = listener.accept().await {

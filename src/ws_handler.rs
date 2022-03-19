@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 
 use futures_channel::mpsc::{unbounded, UnboundedSender};
 use futures_util::{future, pin_mut, stream::TryStreamExt, StreamExt};
-use log::error;
+use log::{debug, error, info};
 use tokio::net::TcpStream;
 use tungstenite::protocol::Message;
 
@@ -15,12 +15,12 @@ pub(crate) async fn handle_connection(
     raw_stream: TcpStream,
     address: SocketAddr,
 ) {
-    println!("Incoming TCP connection from: {}", address);
+    info!("Incoming TCP connection from: {}", address);
 
     let ws_stream = tokio_tungstenite::accept_async(raw_stream)
         .await
         .expect("Error during the websocket handshake occurred");
-    println!("WebSocket connection established: {}", address);
+    info!("WebSocket connection established: {}", address);
 
     let (tx, rx) = unbounded();
     let (outgoing, mut incoming) = ws_stream.split();
@@ -60,7 +60,7 @@ pub(crate) async fn handle_connection(
     };
 
     let broadcast_incoming = incoming.try_for_each(|msg| {
-        println!(
+        debug!(
             "Received a message from {} for room {}: {:#}",
             address,
             &room_context.peer_map.read().unwrap().get(&address).unwrap(),
@@ -84,17 +84,17 @@ pub(crate) async fn handle_connection(
     pin_mut!(broadcast_incoming, receive_from_others);
     future::select(broadcast_incoming, receive_from_others).await;
 
-    println!("{} disconnected", &client.address);
+    info!("{} disconnected", &client.address);
     room_context.peer_map.write().unwrap().remove(&address);
     match room.lock().unwrap().remove_client(&client.address) {
         Ok(_worked) => { /*Working as intended */ }
         Err(_) => {
-            print!("Warning! Tried to remove a client that wasn't there!")
+            error!("Warning! Tried to remove a client that wasn't there!")
         }
     };
     if room.lock().unwrap().clients.is_empty() {
         let room_id = &room.lock().unwrap().room_id;
-        println!("Room '{room_id}' has no more peers. Removing...",);
+        info!("Room '{room_id}' has no more peers. Removing...",);
         room_context.room_map.write().unwrap().remove(room_id);
     }
 }
