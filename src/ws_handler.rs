@@ -83,15 +83,14 @@ pub(crate) async fn handle_connection(
 
     let broadcast_incoming = incoming.try_for_each(|msg| {
         debug!(
-            "Received a message from {} for room {}: {:#?}",
-            address,
-            &room_context.peer_map.read().unwrap().get(&address).unwrap(),
-            msg.to_text().unwrap()
+            "Room {room:?}: From {address}: {contents:#?}",
+            room=&room_context.peer_map.read().unwrap().get(&address).unwrap(),
+            contents=msg.to_text().unwrap()
         );
         // We want to broadcast the message to everyone in the room except ourselves.
         let _broadcast_recipients =
             room // God
-                .lock() // Is
+                .lock() // it's
                 .unwrap() // Too
                 .clients // Long
                 .iter() // Save
