@@ -2,10 +2,11 @@ use std::{env, io::Error as IoError};
 
 use tokio::net::TcpListener;
 
-use crate::room::RoomContext;
+use crate::room_context::RoomContext;
 
 mod client;
 mod room;
+mod room_context;
 mod word_chooser;
 mod ws_handler;
 

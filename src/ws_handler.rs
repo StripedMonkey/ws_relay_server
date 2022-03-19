@@ -6,8 +6,7 @@ use log::error;
 use tokio::net::TcpStream;
 use tungstenite::protocol::Message;
 
-use crate::client::RoomClient;
-use crate::room::{RoomContext, RoomRequest};
+use crate::{client::RoomClient, room::RoomRequest, room_context::RoomContext};
 
 pub(crate) type Tx = UnboundedSender<Message>;
 
