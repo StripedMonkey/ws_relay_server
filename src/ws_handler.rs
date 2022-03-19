@@ -6,7 +6,11 @@ use log::{debug, error, info};
 use tokio::net::TcpStream;
 use tungstenite::protocol::Message;
 
-use crate::{client::RoomClient, room::RoomRequest, room_context::RoomContext};
+use crate::{
+    client::RoomClient,
+    room::RoomRequest,
+    room_context::{RoomContext, WrappedRoom},
+};
 
 pub(crate) type Tx = UnboundedSender<Message>;
 
@@ -34,9 +38,18 @@ pub(crate) async fn handle_connection(
         }
         Some(result) => match result {
             Ok(msg) => match msg {
-                Message::Text(content) => serde_json::from_str(&content).unwrap(),
+                Message::Text(content) => {
+                    info!("Parsing message {content}");
+                    match serde_json::from_str::<RoomRequest>(&content) {
+                        Ok(req) => req,
+                        Err(e) => {
+                            error!("Failed to parse message from client: {e}");
+                            return;
+                        }
+                    }
+                }
                 unhandled => {
-                    error!("Unexpected first message from client! {:?}", unhandled);
+                    error!("Unexpected first message type from client! {:?}", unhandled);
                     return;
                 }
             },
@@ -52,7 +65,16 @@ pub(crate) async fn handle_connection(
 
     // The first message from the client tells if it's creating a new session or joining a session
     let room = match room_context.init_client(client.clone(), message) {
-        Ok(room) => room,
+        Ok(room) => {
+            let room_name = room.lock().unwrap().room_id.clone();
+            client
+                .send
+                .unbounded_send(Message::Text(
+                    serde_json::to_string(&RoomRequest::JoinRoom(room_name)).unwrap(),
+                ))
+                .unwrap();
+            room
+        }
         Err(e) => {
             error!("Failed to initialize client: {client}! Error {e:?}"); // Currently impossible?
             return;
@@ -61,7 +83,7 @@ pub(crate) async fn handle_connection(
 
     let broadcast_incoming = incoming.try_for_each(|msg| {
         debug!(
-            "Received a message from {} for room {}: {:#}",
+            "Received a message from {} for room {}: {:#?}",
             address,
             &room_context.peer_map.read().unwrap().get(&address).unwrap(),
             msg.to_text().unwrap()
@@ -85,6 +107,15 @@ pub(crate) async fn handle_connection(
     future::select(broadcast_incoming, receive_from_others).await;
 
     info!("{} disconnected", &client.address);
+    cleanup_connection(room_context, address, room, client);
+}
+
+fn cleanup_connection(
+    room_context: RoomContext,
+    address: SocketAddr,
+    room: WrappedRoom,
+    client: RoomClient,
+) {
     room_context.peer_map.write().unwrap().remove(&address);
     match room.lock().unwrap().remove_client(&client.address) {
         Ok(_worked) => { /*Working as intended */ }

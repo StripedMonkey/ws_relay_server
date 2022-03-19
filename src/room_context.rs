@@ -1,3 +1,5 @@
+use log::info;
+
 use crate::{
     client::RoomClient,
     room::{Room, RoomID, RoomRequest},
@@ -26,9 +28,10 @@ impl RoomContext {
         let mut room_map = self.room_map.write().unwrap();
         match init_type {
             RoomRequest::NewRoom => {
+                info!("Generating new room...");
                 let mut room_name = generate_room_name();
                 let mut tries = 0;
-                while !room_map.contains_key(&room_name) || tries < 10 {
+                while room_map.contains_key(&room_name) && tries < 10 {
                     log::debug!("Generated a room that was already taken! Try: {tries}");
                     room_name = generate_room_name();
                     tries += 1;
@@ -37,10 +40,13 @@ impl RoomContext {
                 room_map.insert(room_name, room.clone());
                 Ok(room)
             }
-            RoomRequest::JoinRoom(room) => match room_map.get(&room) {
-                Some(room) => Ok(room.clone()),
-                None => Err(()),
-            },
+            RoomRequest::JoinRoom(room) => {
+                info!("Trying to join existing room...");
+                match room_map.get(&room) {
+                    Some(room) => Ok(room.clone()),
+                    None => Err(()),
+                }
+            }
         }
     }
 
