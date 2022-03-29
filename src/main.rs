@@ -1,4 +1,4 @@
-use std::{env, io::Error as IoError};
+use std::io::Error as IoError;
 
 use clap::Parser;
 use log::{info, LevelFilter};
@@ -27,7 +27,7 @@ struct CMDLineArgs {
 async fn main() -> Result<(), IoError> {
     let args = CMDLineArgs::parse();
 
-    pretty_env_logger::formatted_builder()
+    pretty_env_logger::formatted_timed_builder()
         .filter_level(args.debug)
         .init();
 

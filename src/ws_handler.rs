@@ -39,11 +39,11 @@ pub(crate) async fn handle_connection(
         Some(result) => match result {
             Ok(msg) => match msg {
                 Message::Text(content) => {
-                    info!("Parsing message {content}");
+                    info!("Parsing message {content:?}");
                     match serde_json::from_str::<RoomRequest>(&content) {
                         Ok(req) => req,
                         Err(e) => {
-                            error!("Failed to parse message from client: {e}");
+                            error!("Failed to parse message from client: {e:?}");
                             return;
                         }
                     }
@@ -64,7 +64,7 @@ pub(crate) async fn handle_connection(
     };
 
     // The first message from the client tells if it's creating a new session or joining a session
-    let room = match room_context.init_client(client.clone(), message) {
+    let room: WrappedRoom = match room_context.init_client(client.clone(), message) {
         Ok(room) => {
             let room_name = room.lock().unwrap().room_id.clone();
             client
@@ -84,8 +84,8 @@ pub(crate) async fn handle_connection(
     let broadcast_incoming = incoming.try_for_each(|msg| {
         debug!(
             "Room {room:?}: From {address}: {contents:#?}",
-            room=&room_context.peer_map.read().unwrap().get(&address).unwrap(),
-            contents=msg.to_text().unwrap()
+            room = &room_context.peer_map.read().unwrap().get(&address).unwrap(),
+            contents = msg.to_text().unwrap()
         );
         // We want to broadcast the message to everyone in the room except ourselves.
         let _broadcast_recipients =

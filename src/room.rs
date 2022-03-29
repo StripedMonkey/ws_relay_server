@@ -1,11 +1,18 @@
 use std::{collections::HashMap, net::SocketAddr};
 
 use serde::{Deserialize, Serialize};
+use tungstenite::Message;
 
 use crate::client::RoomClient;
 use crate::ws_handler::Tx;
 
 pub type RoomID = String;
+
+trait RoomAssists<'s> {
+    fn add_client(&self, client: RoomClient) -> Result<(), ()>;
+    fn remove_client(&self, address: &SocketAddr) -> Result<(), ()>;
+    fn filtered_announce<P>(&'s self, filter_by: P, message: Message) -> Result<(), ()>;
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) enum RoomRequest {
