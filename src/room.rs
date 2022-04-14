@@ -1,17 +1,16 @@
 use std::{collections::HashMap, net::SocketAddr};
 
+use log::warn;
 use serde::{Deserialize, Serialize};
-use tungstenite::Message;
 
 use crate::client::RoomClient;
 use crate::ws_handler::Tx;
 
 pub type RoomID = String;
 
-trait RoomAssists<'s> {
-    fn add_client(&self, client: RoomClient) -> Result<(), ()>;
-    fn remove_client(&self, address: &SocketAddr) -> Result<(), ()>;
-    fn filtered_announce<P>(&'s self, filter_by: P, message: Message) -> Result<(), ()>;
+pub(crate) enum RoomError {
+    NotFound,
+    AlreadyExists,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -32,17 +31,19 @@ impl Room {
         Room { clients, room_id }
     }
 
-    pub fn add_client(&mut self, client: RoomClient) -> Result<(), ()> {
-        match self.clients.insert(client.address, client.send) {
-            Some(_) => Err(()),
-            None => Ok(()),
+    pub fn add_client(&mut self, client: RoomClient) -> Option<RoomError> {
+        if let Some(_) = self.clients.insert(client.address, client.send) {
+            warn!("The client already exists in room!");
+            return Some(RoomError::AlreadyExists);
         }
+        None
     }
 
-    pub fn remove_client(&mut self, address: &SocketAddr) -> Result<(), ()> {
-        match self.clients.remove_entry(address) {
-            Some(_) => Ok(()),
-            None => Err(()),
+    pub fn drop_client(&mut self, address: &SocketAddr) -> Option<RoomError> {
+        if let Some(_) = self.clients.remove_entry(address) {
+            warn!("Tried to remove a client that wasn't there!");
+            return Some(RoomError::NotFound);
         }
+        None
     }
 }

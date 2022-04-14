@@ -11,6 +11,11 @@ use std::{
     sync::{Arc, Mutex, RwLock},
 };
 
+#[derive(Debug)]
+pub(crate) enum RoomContextError {
+    NonexistentRoom,
+}
+
 pub(crate) type WrappedRoom = Arc<Mutex<Room>>;
 
 #[derive(Clone, Default)]
@@ -24,7 +29,7 @@ impl RoomContext {
         RoomContext::default()
     }
 
-    fn get_room(&self, init_type: RoomRequest) -> Result<WrappedRoom, ()> {
+    fn get_room(&self, init_type: RoomRequest) -> Result<WrappedRoom, RoomContextError> {
         let mut room_map = self.room_map.write().unwrap();
         match init_type {
             RoomRequest::NewRoom => {
@@ -46,7 +51,7 @@ impl RoomContext {
                     Some(room) => Ok(room.clone()),
                     None => {
                         error!("Failed to get room. Doesn't exist?");
-                        Err(())
+                        return Err(RoomContextError::NonexistentRoom);
                     }
                 }
             }
@@ -57,7 +62,7 @@ impl RoomContext {
         &self,
         client: RoomClient,
         init_type: RoomRequest,
-    ) -> Result<Arc<std::sync::Mutex<Room>>, ()> {
+    ) -> Result<Arc<std::sync::Mutex<Room>>, RoomContextError> {
         let room: WrappedRoom = self.get_room(init_type)?;
 
         // Add the client to the room and client maps

@@ -1,9 +1,14 @@
 use std::net::SocketAddr;
 
 use futures_channel::mpsc::{unbounded, UnboundedSender};
-use futures_util::{future, pin_mut, stream::TryStreamExt, StreamExt};
+use futures_util::{
+    future, pin_mut,
+    stream::{SplitStream, TryStreamExt},
+    StreamExt,
+};
 use log::{debug, error, info};
 use tokio::net::TcpStream;
+use tokio_tungstenite::WebSocketStream;
 use tungstenite::protocol::Message;
 
 use crate::{
@@ -31,10 +36,50 @@ pub(crate) async fn handle_connection(
     let client = RoomClient { address, send: tx };
     // First message through the websocket sets up the room as per our "protocol"
     // TODO: Define more clearly what and how this works
+    let room: WrappedRoom;
+    if let Ok(value) = initialize_client(&mut incoming, &room_context, &client).await {
+        room = value;
+    } else {
+        return;
+    };
+
+    let boadcast_handler = incoming.try_for_each(|msg| {
+        debug!(
+            "Room {room:?}: From {address}: {contents:#?}",
+            room = &room_context.peer_map.read().unwrap().get(&address).unwrap(),
+            contents = msg.to_text().unwrap()
+        );
+        // We want to broadcast the message to everyone in the room except ourselves.
+        broadcast_message(&room, address, msg.clone());
+        future::ok(())
+    });
+
+    let recieve_handler = rx.map(Ok).forward(outgoing);
+
+    pin_mut!(boadcast_handler, recieve_handler);
+    future::select(boadcast_handler, recieve_handler).await;
+
+    info!("{} disconnected", &client.address);
+    cleanup_connection(room_context, address, room, client);
+}
+
+enum RoomInitializationError {
+    Unknown,
+    InvalidJsonMessage(serde_json::Error),
+    InvalidMessage,
+    ClientInitError
+}
+
+async fn initialize_client(
+    incoming: &mut SplitStream<WebSocketStream<TcpStream>>,
+    room_context: &RoomContext,
+    client: &RoomClient,
+) -> Result<WrappedRoom, RoomInitializationError> {
     let message: RoomRequest = match incoming.next().await {
         None => {
             error!("Failed to get a first message!");
-            return;
+            // I don't actually know exactly what the requirements are for us to get None.
+            return Err(RoomInitializationError::Unknown);
         }
         Some(result) => match result {
             Ok(msg) => match msg {
@@ -44,13 +89,13 @@ pub(crate) async fn handle_connection(
                         Ok(req) => req,
                         Err(e) => {
                             error!("Failed to parse message from client: {e:?}");
-                            return;
+                            return Err(RoomInitializationError::InvalidJsonMessage(e));
                         }
                     }
                 }
                 unhandled => {
                     error!("Unexpected first message type from client! {:?}", unhandled);
-                    return;
+                    return Err(RoomInitializationError::InvalidMessage);
                 }
             },
             Err(err) => {
@@ -58,12 +103,10 @@ pub(crate) async fn handle_connection(
                     "Failed to correctly receive initializing message from client! {:?}",
                     err
                 );
-                return;
+                return Err(RoomInitializationError::InvalidMessage);
             }
         },
     };
-
-    // The first message from the client tells if it's creating a new session or joining a session
     let room: WrappedRoom = match room_context.init_client(client.clone(), message) {
         Ok(room) => {
             let room_name = room.lock().unwrap().room_id.clone();
@@ -76,37 +119,22 @@ pub(crate) async fn handle_connection(
             room
         }
         Err(e) => {
-            error!("Failed to initialize client: {client}! Error {e:?}"); // Currently impossible?
-            return;
+            error!("Failed to initialize client: {client}! Error {e:?}");
+            return Err(RoomInitializationError::ClientInitError);
         }
     };
+    Ok(room)
+}
 
-    let broadcast_incoming = incoming.try_for_each(|msg| {
-        debug!(
-            "Room {room:?}: From {address}: {contents:#?}",
-            room = &room_context.peer_map.read().unwrap().get(&address).unwrap(),
-            contents = msg.to_text().unwrap()
-        );
-        // We want to broadcast the message to everyone in the room except ourselves.
-        let _broadcast_recipients =
-            room // God
-                .lock() // it's
-                .unwrap() // Too
-                .clients // Long
-                .iter() // Save
-                .filter(|(peer_addr, _)| peer_addr != &&address) // Me
-                .map(|(_, ws_sink)| ws_sink) // Please
-                .for_each(|recp| recp.unbounded_send(msg.clone()).unwrap());
-        future::ok(())
-    });
-
-    let receive_from_others = rx.map(Ok).forward(outgoing);
-
-    pin_mut!(broadcast_incoming, receive_from_others);
-    future::select(broadcast_incoming, receive_from_others).await;
-
-    info!("{} disconnected", &client.address);
-    cleanup_connection(room_context, address, room, client);
+fn broadcast_message(room: &WrappedRoom, ignored_address: SocketAddr, msg: Message) {
+    let _broadcast_recipients = room // God
+        .lock() // it's
+        .unwrap() // Too
+        .clients // Long
+        .iter() // Save
+        .filter(|(peer_addr, _)| **peer_addr != ignored_address) // Me
+        .map(|(_, ws_sink)| ws_sink) // Please
+        .for_each(|recp| recp.unbounded_send(msg.clone()).unwrap());
 }
 
 fn cleanup_connection(
@@ -116,12 +144,7 @@ fn cleanup_connection(
     client: RoomClient,
 ) {
     room_context.peer_map.write().unwrap().remove(&address);
-    match room.lock().unwrap().remove_client(&client.address) {
-        Ok(_worked) => { /*Working as intended */ }
-        Err(_) => {
-            error!("Warning! Tried to remove a client that wasn't there!")
-        }
-    };
+    room.lock().unwrap().drop_client(&client.address);
     if room.lock().unwrap().clients.is_empty() {
         let room_id = &room.lock().unwrap().room_id;
         info!("Room '{room_id}' has no more peers. Removing...",);
