@@ -7,6 +7,7 @@ use futures_util::{
     StreamExt,
 };
 use log::{debug, error, info};
+use serde::Serialize;
 use tokio::net::TcpStream;
 use tokio_tungstenite::WebSocketStream;
 use tungstenite::protocol::Message;
@@ -16,6 +17,16 @@ use crate::{
     room::RoomRequest,
     room_context::{RoomContext, WrappedRoom},
 };
+
+#[derive(Debug, Serialize)]
+struct UserJoined {
+    ip_joined: SocketAddr,
+}
+
+#[derive(Debug, Serialize)]
+struct UserLeft {
+    ip_left: SocketAddr,
+}
 
 pub(crate) type Tx = UnboundedSender<Message>;
 
@@ -42,7 +53,12 @@ pub(crate) async fn handle_connection(
     } else {
         return;
     };
-
+    broadcast_message(
+        &room,
+        address,
+        Message::Text(serde_json::to_string(&UserJoined { ip_joined: address }).unwrap()),
+    );
+    
     let boadcast_handler = incoming.try_for_each(|msg| {
         debug!(
             "Room {room:?}: From {address}: {contents:#?}",
@@ -67,7 +83,7 @@ enum RoomInitializationError {
     Unknown,
     InvalidJsonMessage(serde_json::Error),
     InvalidMessage,
-    ClientInitError
+    ClientInitError,
 }
 
 async fn initialize_client(
@@ -149,5 +165,11 @@ fn cleanup_connection(
         let room_id = &room.lock().unwrap().room_id;
         info!("Room '{room_id}' has no more peers. Removing...",);
         room_context.room_map.write().unwrap().remove(room_id);
+    } else {
+        broadcast_message(
+            &room,
+            address,
+            Message::Text(serde_json::to_string(&UserLeft { ip_left: address }).unwrap()),
+        )
     }
 }

@@ -17,6 +17,7 @@ pub(crate) enum RoomError {
 pub(crate) enum RoomRequest {
     NewRoom,
     JoinRoom(String),
+    JoinWithCode(String),
 }
 
 // Represents a room a particular peer might be in
