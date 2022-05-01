@@ -14,6 +14,7 @@ use std::{
 #[derive(Debug)]
 pub(crate) enum RoomContextError {
     NonexistentRoom,
+    AlreadyExists
 }
 
 pub(crate) type WrappedRoom = Arc<Mutex<Room>>;
@@ -55,6 +56,15 @@ impl RoomContext {
                     }
                 }
             }
+            RoomRequest::JoinWithCode(room_name) => {
+                if room_map.contains_key(&room_name) {
+                    return Err(RoomContextError::AlreadyExists)
+                }
+                let room: WrappedRoom = Arc::new(Mutex::new(Room::new(room_name.clone())));
+                room_map.insert(room_name, room.clone());
+                Ok(room)
+            },
+            
         }
     }
 
@@ -70,7 +80,7 @@ impl RoomContext {
             .write()
             .unwrap()
             .insert(client.address, room.lock().unwrap().room_id.clone());
-        room.lock().unwrap().add_client(client).unwrap();
+        room.lock().unwrap().add_client(client);
         Ok(room) // Return the room
     }
 }
