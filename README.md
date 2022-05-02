@@ -1,5 +1,5 @@
 
-
+[![Rust CI](https://github.com/StripedMonkey/ws_relay_server/actions/workflows/rust-ci.yml/badge.svg)](https://github.com/StripedMonkey/ws_relay_server/actions/workflows/rust-ci.yml)
 ### Building
 
 * Follow the instructions on https://www.rust-lang.org/tools/install
