@@ -14,7 +14,7 @@ use tungstenite::protocol::Message;
 
 use crate::{
     client::RoomClient,
-    room::RoomRequest,
+    room::{Room, RoomRequest},
     room_context::{RoomContext, WrappedRoom},
 };
 
@@ -53,12 +53,16 @@ pub(crate) async fn handle_connection(
     } else {
         return;
     };
+    debug!(
+        "Room initialized with {} users",
+        room.lock().unwrap().clients.len()
+    );
     broadcast_message(
         &room,
         address,
         Message::Text(serde_json::to_string(&UserJoined { ip_joined: address }).unwrap()),
     );
-    
+
     let boadcast_handler = incoming.try_for_each(|msg| {
         debug!(
             "Room {room:?}: From {address}: {contents:#?}",
@@ -66,7 +70,9 @@ pub(crate) async fn handle_connection(
             contents = msg.to_text().unwrap()
         );
         // We want to broadcast the message to everyone in the room except ourselves.
-        broadcast_message(&room, address, msg.clone());
+        if !msg.is_close() {
+            broadcast_message(&room, address, msg.clone());
+        }
         future::ok(())
     });
 
@@ -76,7 +82,7 @@ pub(crate) async fn handle_connection(
     future::select(boadcast_handler, recieve_handler).await;
 
     info!("{} disconnected", &client.address);
-    cleanup_connection(room_context, address, room, client);
+    cleanup_connection(room_context, address);
 }
 
 enum RoomInitializationError {
@@ -143,6 +149,7 @@ async fn initialize_client(
 }
 
 fn broadcast_message(room: &WrappedRoom, ignored_address: SocketAddr, msg: Message) {
+    debug!("Ignoring address {ignored_address} while broadcasting message: {msg:#?}");
     let _broadcast_recipients = room // God
         .lock() // it's
         .unwrap() // Too
@@ -153,23 +160,22 @@ fn broadcast_message(room: &WrappedRoom, ignored_address: SocketAddr, msg: Messa
         .for_each(|recp| recp.unbounded_send(msg.clone()).unwrap());
 }
 
-fn cleanup_connection(
-    room_context: RoomContext,
-    address: SocketAddr,
-    room: WrappedRoom,
-    client: RoomClient,
-) {
-    room_context.peer_map.write().unwrap().remove(&address);
-    room.lock().unwrap().drop_client(&client.address);
-    if room.lock().unwrap().clients.is_empty() {
-        let room_id = &room.lock().unwrap().room_id;
-        info!("Room '{room_id}' has no more peers. Removing...",);
-        room_context.room_map.write().unwrap().remove(room_id);
-    } else {
+
+fn cleanup_connection(room_context: RoomContext, address: SocketAddr) {
+    if let Some(room) = room_context.get_room_by_addr(address) {
+        {
+            let mut room = room.lock().unwrap();
+            if let Some(error) = room.drop_client(&address) {
+                error!("Dropped client failed! {error:?}");
+                return;
+            }
+        }
         broadcast_message(
             &room,
             address,
             Message::Text(serde_json::to_string(&UserLeft { ip_left: address }).unwrap()),
-        )
+        );
+    } else {
+        error!("Couldn't find associated room for address {address}!");
     }
 }

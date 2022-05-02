@@ -1,4 +1,4 @@
-use log::{error, info};
+use log::{debug, error, info, trace};
 
 use crate::{
     client::RoomClient,
@@ -14,7 +14,7 @@ use std::{
 #[derive(Debug)]
 pub(crate) enum RoomContextError {
     NonexistentRoom,
-    AlreadyExists
+    AlreadyExists,
 }
 
 pub(crate) type WrappedRoom = Arc<Mutex<Room>>;
@@ -28,6 +28,14 @@ pub(crate) struct RoomContext {
 impl RoomContext {
     pub(crate) fn new() -> RoomContext {
         RoomContext::default()
+    }
+
+    pub fn get_room_by_addr(&self, address: SocketAddr) -> Option<WrappedRoom> {
+        if let Some(room_name) = self.peer_map.read().unwrap().get(&address) {
+            self.room_map.read().unwrap().get(room_name).cloned()
+        } else {
+            None
+        }
     }
 
     fn get_room(&self, init_type: RoomRequest) -> Result<WrappedRoom, RoomContextError> {
@@ -58,13 +66,12 @@ impl RoomContext {
             }
             RoomRequest::JoinWithCode(room_name) => {
                 if room_map.contains_key(&room_name) {
-                    return Err(RoomContextError::AlreadyExists)
+                    return Err(RoomContextError::AlreadyExists);
                 }
                 let room: WrappedRoom = Arc::new(Mutex::new(Room::new(room_name.clone())));
                 room_map.insert(room_name, room.clone());
                 Ok(room)
-            },
-            
+            }
         }
     }
 
