@@ -29,6 +29,7 @@ async fn main() -> Result<(), IoError> {
 
     pretty_env_logger::formatted_timed_builder()
         .filter_level(args.debug)
+        .filter_module("tungstenite", LevelFilter::Error)
         .init();
 
     let room_context = RoomContext::new();
